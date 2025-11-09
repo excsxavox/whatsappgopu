@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  whatsapp-api:
+    build: .
+    container_name: whatsapp-api-go
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # MongoDB
+      MONGODB_URL: ${MONGODB_URL}
+      MONGO_DB: ${MONGO_DB:-whatsapp_api}
+      
+      # WhatsApp Cloud API
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WABA_PHONE_ID: ${WABA_PHONE_ID}
+      WABA_TOKEN: ${WABA_TOKEN}
+      WABA_API_VERSION: ${WABA_API_VERSION:-v20.0}
+      
+      # API Config
+      API_PORT: ${API_PORT:-8080}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/webhook"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

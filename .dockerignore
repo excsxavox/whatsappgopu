@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Archivos temporales
+*.log
+*.tmp
+*.swp
+*~
+
+# Binarios
+*.exe
+whatsapp-api
+whatsapp-api-go
+
+# Dependencias locales
+vendor/
+
+# Scripts de desarrollo
+START.ps1
+START_NGROK.ps1
+EJECUTAR_NGROK.bat
+OBTENER_URL_NGROK.ps1
+NGROK_START.ps1
+ngrok.zip
+ngrok.exe
+
+# Documentación
+*.md
+!README.md
+
+# IDEs
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+config.env
+

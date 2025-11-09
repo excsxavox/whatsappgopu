@@ -1,0 +1,59 @@
+# Binarios
+*.exe
+*.dll
+*.so
+*.dylib
+whatsapp-api
+whatsapp-api-go
+
+# Test binaries
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+.env.local
+.env.production
+config.env
+*.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+
+# ngrok
+ngrok.exe
+ngrok.zip
+ngrok_url.txt
+
+# Scripts de desarrollo local
+START.ps1
+START_NGROK.ps1
+NGROK_START.ps1
+EJECUTAR_NGROK.bat
+OBTENER_URL_NGROK.ps1
+
+# Documentación de setup local
+CONFIGURAR_NGROK.md
