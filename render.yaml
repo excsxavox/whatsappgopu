@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: whatsapp-api-go
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: API_PORT
+        value: 8080
+      - key: MONGO_DB
+        value: whatsapp_api
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MONGODB_URL
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WABA_PHONE_ID
+        sync: false
+      - key: WABA_TOKEN
+        sync: false
+
