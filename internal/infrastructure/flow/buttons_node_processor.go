@@ -3,6 +3,7 @@ package flow
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"whatsapp-api-go/internal/domain/entities"
 	"whatsapp-api-go/internal/domain/ports"
@@ -33,12 +34,33 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 
 	// Extraer configuración
 	config := node.Config
-	content, _ := config["content"].(string)
-	buttonsConfig, _ := config["buttons"].([]interface{})
-	responseVariableName, _ := config["responseVariableName"].(string)
+	
+	// La configuración puede venir en diferentes formatos
+	var header, body, footer string
+	var buttonsConfig []interface{}
+	var responseVariableName string
+
+	// Formato 1: action.header, action.body, action.buttons
+	if actionConfig, ok := config["action"].(map[string]interface{}); ok {
+		header, _ = actionConfig["header"].(string)
+		body, _ = actionConfig["body"].(string)
+		footer, _ = actionConfig["footer"].(string)
+		buttonsConfig, _ = actionConfig["buttons"].([]interface{})
+	} else {
+		// Formato 2: content/bodyText y buttons directamente
+		body, _ = config["content"].(string)
+		if body == "" {
+			body, _ = config["bodyText"].(string)
+		}
+		buttonsConfig, _ = config["buttons"].([]interface{})
+	}
+	
+	responseVariableName, _ = config["responseVariableName"].(string)
 
 	// Reemplazar variables en el contenido
-	content = p.variableReplacer.ReplaceInString(content, session.Variables)
+	body = p.variableReplacer.ReplaceInString(body, session.Variables)
+	header = p.variableReplacer.ReplaceInString(header, session.Variables)
+	footer = p.variableReplacer.ReplaceInString(footer, session.Variables)
 
 	// Construir botones para el payload (no usar entidades, usar map)
 	buttons := []map[string]interface{}{}
@@ -48,8 +70,17 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 			continue
 		}
 
-		btnID, _ := btnMap["id"].(string)
-		btnTitle, _ := btnMap["title"].(string)
+		var btnID, btnTitle string
+		
+		// Formato 1: Ya viene con type: "reply" y reply: {id, title}
+		if replyData, ok := btnMap["reply"].(map[string]interface{}); ok {
+			btnID, _ = replyData["id"].(string)
+			btnTitle, _ = replyData["title"].(string)
+		} else {
+			// Formato 2: Viene directamente con id y title
+			btnID, _ = btnMap["id"].(string)
+			btnTitle, _ = btnMap["title"].(string)
+		}
 
 		// Reemplazar variables en título
 		btnTitle = p.variableReplacer.ReplaceInString(btnTitle, session.Variables)
@@ -63,27 +94,55 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 		})
 	}
 
-	// Crear mensaje interactivo
+	// Extraer número de teléfono del ConversationID (formato: phone@instance)
+	phone := session.ConversationID
+	if idx := strings.Index(session.ConversationID, "@"); idx != -1 {
+		phone = session.ConversationID[:idx]
+	}
+
+	// Crear mensaje interactivo con botones
+	interactive := map[string]interface{}{
+		"type": "button",
+		"body": map[string]interface{}{
+			"text": body,
+		},
+		"action": map[string]interface{}{
+			"buttons": buttons,
+		},
+	}
+	
+	// Agregar header si existe
+	if header != "" {
+		interactive["header"] = map[string]interface{}{
+			"type": "text",
+			"text": header,
+		}
+	}
+	
+	// Agregar footer si existe
+	if footer != "" {
+		interactive["footer"] = map[string]interface{}{
+			"text": footer,
+		}
+	}
+
 	message := &entities.Message{
 		TenantID:       session.TenantID,
 		InstanceID:     session.InstanceID,
 		ConversationID: session.ConversationID,
-		To:             session.ConversationID,
+		To:             phone, // Solo el número de teléfono
 		Direction:      "out",
 		MessageData: entities.MessageData{
-			Type: "interactive",
-			Interactive: &entities.InteractiveContent{
-				Type: "button",
-			},
+			Type:        "interactive",
+			Interactive: interactive,
 		},
 	}
 
-	// Agregar los botones como metadata adicional (el adapter los manejará)
-	// Por ahora, enviamos un mensaje de texto con los botones como fallback
-	message.MessageData.Type = "text"
-	message.MessageData.Text = &entities.TextContent{
-		Body: content,
-	}
+	// LOG: Ver estructura antes de enviar
+	p.logger.Info(fmt.Sprintf("🔘 Mensaje de botones construido - To: %s, Buttons count: %d", phone, len(buttons)))
+	p.logger.Info(fmt.Sprintf("   Header: %s", header))
+	p.logger.Info(fmt.Sprintf("   Body: %s", body))
+	p.logger.Info(fmt.Sprintf("   Footer: %s", footer))
 
 	// Enviar mensaje
 	err := p.messagingService.SendMessage(ctx, message)

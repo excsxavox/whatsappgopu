@@ -59,8 +59,8 @@ type MessageData struct {
 	// Texto
 	Text *TextContent `json:"text,omitempty" bson:"text,omitempty"`
 
-	// Interactive (botones, listas, flows)
-	Interactive *InteractiveContent `json:"interactive,omitempty" bson:"interactive,omitempty"`
+	// Interactive (botones, listas, flows) - Flexible para envío y recepción
+	Interactive map[string]interface{} `json:"interactive,omitempty" bson:"interactive,omitempty"`
 
 	// Media (imagen, video, audio, documento, sticker)
 	Media *MediaContent `json:"media,omitempty" bson:"media,omitempty"`
@@ -114,7 +114,10 @@ type MediaContent struct {
 	Size     int64  `json:"size,omitempty" bson:"size,omitempty"`
 	Caption  string `json:"caption,omitempty" bson:"caption,omitempty"`
 
-	// NO guardar binario en Mongo - usar storage externo
+	// Datos binarios temporales (NO se guardan en Mongo)
+	Data []byte `json:"-" bson:"-"`
+
+	// Almacenamiento externo (para medios ya subidos)
 	Storage *MediaStorage `json:"storage,omitempty" bson:"storage,omitempty"`
 }
 

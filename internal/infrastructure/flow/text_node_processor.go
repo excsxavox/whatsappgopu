@@ -3,6 +3,7 @@ package flow
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"whatsapp-api-go/internal/domain/entities"
 	"whatsapp-api-go/internal/domain/ports"
@@ -44,12 +45,18 @@ func (p *TextNodeProcessor) Process(ctx context.Context, session *entities.FlowS
 	// Reemplazar variables en el contenido
 	content = p.variableReplacer.ReplaceInString(content, session.Variables)
 
+	// Extraer número de teléfono del ConversationID (formato: phone@instance)
+	phone := session.ConversationID
+	if idx := strings.Index(session.ConversationID, "@"); idx != -1 {
+		phone = session.ConversationID[:idx]
+	}
+
 	// Crear mensaje
 	message := &entities.Message{
 		TenantID:       session.TenantID,
 		InstanceID:     session.InstanceID,
 		ConversationID: session.ConversationID,
-		To:             session.ConversationID, // Número del usuario
+		To:             phone, // Solo el número de teléfono
 		Direction:      "out",
 		MessageData: entities.MessageData{
 			Type: "text",

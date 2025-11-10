@@ -20,13 +20,13 @@ import (
 
 // WebhookHandler maneja los webhooks de WhatsApp Cloud API
 type WebhookHandler struct {
-	verifyToken              string
-	appSecret                string
-	sendMessageUseCase       ports.SendMessageUseCase
-	messageRepo              ports.MessageRepository
-	instanceID               string // WABA_PHONE_ID
-	logger                   ports.Logger
-	startFlowUseCase         *usecases.StartFlowUseCase
+	verifyToken               string
+	appSecret                 string
+	sendMessageUseCase        ports.SendMessageUseCase
+	messageRepo               ports.MessageRepository
+	instanceID                string // WABA_PHONE_ID
+	logger                    ports.Logger
+	startFlowUseCase          *usecases.StartFlowUseCase
 	processFlowMessageUseCase *usecases.ProcessFlowMessageUseCase
 
 	// Idempotencia simple (en producción usar Redis con TTL)
@@ -248,14 +248,14 @@ func (h *WebhookHandler) processWebhook(body []byte) {
 				if h.startFlowUseCase != nil {
 					h.logger.Info("No hay sesión activa, iniciando flujo por defecto", "from", msg.From)
 					_, err := h.startFlowUseCase.Execute(context.Background(), usecases.StartFlowRequest{
-						ConversationID: msg.From,
-						FlowID:         "", // Usar flujo por defecto
+						ConversationID: incomingMsg.ConversationID, // FIX: usar ConversationID completo (phone@instance)
+						FlowID:         "",                         // Usar flujo por defecto
 						TenantID:       "default",
 						InstanceID:     h.instanceID,
 					})
 					if err != nil {
 						h.logger.Error("Error iniciando flujo", "error", err, "from", msg.From)
-						
+
 						// Fallback: respuesta automática simple
 						if msg.Type == "text" && msg.Text.Body != "" {
 							responseText := fmt.Sprintf("✅ Recibido: %s", msg.Text.Body)

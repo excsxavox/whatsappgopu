@@ -49,7 +49,7 @@ func Load() *Config {
 
 		// MongoDB - REQUERIDOS
 		MongoURI: mongoURI,
-		MongoDB:  getEnv("MONGO_DB", "whatsapp_api"),
+		MongoDB:  getEnv("MONGO_DB", "test"),
 
 		// Rate Limiting
 		PairRateLimit: 6, // 1 mensaje cada 6 segundos por usuario

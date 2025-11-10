@@ -40,7 +40,7 @@ func (uc *ProcessFlowMessageUseCase) Execute(ctx context.Context, message *entit
 
 	if session == nil {
 		uc.logger.Info("No active session found for this conversation")
-		return nil
+		return fmt.Errorf("no active session found")
 	}
 
 	// Procesar mensaje en el contexto de la sesión

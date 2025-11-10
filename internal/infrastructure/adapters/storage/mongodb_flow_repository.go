@@ -58,7 +58,7 @@ func (r *mongoFlowRepository) FindDefault(ctx context.Context, instanceID string
 	filter := bson.M{
 		"instance_id": instanceID,
 		"is_default":  true,
-		"is_active":   true,
+		"_isActive":   true,
 	}
 
 	err := r.collection.FindOne(ctx, filter).Decode(&flow)

@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,12 +59,18 @@ func (a *CloudAPIAdapter) SendMessage(ctx context.Context, message *entities.Mes
 	url := fmt.Sprintf("%s/%s/messages", a.baseURL, a.phoneNumberID)
 
 	// Construir payload según tipo de mensaje
-	payload := a.buildPayload(message)
+	payload, err := a.buildPayload(message)
+	if err != nil {
+		return fmt.Errorf("error al construir payload: %w", err)
+	}
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("error al serializar mensaje: %w", err)
 	}
+
+	// LOG: Ver payload exacto que se envía
+	a.logger.Info("📤 Enviando a WhatsApp Cloud API", "type", message.MessageData.Type, "payload", string(jsonData))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -123,7 +132,7 @@ func (a *CloudAPIAdapter) SendMessage(ctx context.Context, message *entities.Mes
 }
 
 // buildPayload construye el payload según el tipo de mensaje
-func (a *CloudAPIAdapter) buildPayload(message *entities.Message) map[string]interface{} {
+func (a *CloudAPIAdapter) buildPayload(message *entities.Message) (map[string]interface{}, error) {
 	payload := map[string]interface{}{
 		"messaging_product": "whatsapp",
 		"recipient_type":    "individual",
@@ -145,9 +154,20 @@ func (a *CloudAPIAdapter) buildPayload(message *entities.Message) map[string]int
 	case "image", "video", "audio", "document":
 		if message.MessageData.Media != nil {
 			mediaPayload := map[string]interface{}{}
-			if message.MessageData.Media.Storage != nil {
+
+			// Si tiene datos binarios, primero subir a WhatsApp
+			if len(message.MessageData.Media.Data) > 0 {
+				mediaID, err := a.uploadMedia(message.MessageData.Media.Data, message.MessageData.Media.MimeType)
+				if err != nil {
+					a.logger.Error("Error uploading media to WhatsApp", "error", err)
+					return nil, fmt.Errorf("error uploading media: %w", err)
+				}
+				mediaPayload["id"] = mediaID
+			} else if message.MessageData.Media.Storage != nil {
+				// Si tiene URL pública, usar link
 				mediaPayload["link"] = message.MessageData.Media.Storage.PublicURL
 			}
+
 			if message.MessageData.Media.Caption != "" {
 				mediaPayload["caption"] = message.MessageData.Media.Caption
 			}
@@ -163,6 +183,12 @@ func (a *CloudAPIAdapter) buildPayload(message *entities.Message) map[string]int
 				"address":   message.MessageData.Location.Address,
 			}
 		}
+
+	case "interactive":
+		// Botones interactivos, listas, etc.
+		if message.MessageData.Interactive != nil {
+			payload["interactive"] = message.MessageData.Interactive
+		}
 	}
 
 	// Context (reply_to)
@@ -172,7 +198,96 @@ func (a *CloudAPIAdapter) buildPayload(message *entities.Message) map[string]int
 		}
 	}
 
-	return payload
+	return payload, nil
+}
+
+// uploadMedia sube un archivo de medios a WhatsApp Cloud API usando multipart/form-data
+func (a *CloudAPIAdapter) uploadMedia(data []byte, mimeType string) (string, error) {
+	url := fmt.Sprintf("%s/%s/media", a.baseURL, a.phoneNumberID)
+
+	// Crear buffer para multipart
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+
+	// Agregar messaging_product
+	writer.WriteField("messaging_product", "whatsapp")
+
+	// Determinar extensión y mime type correcto
+	extension := ".ogg"
+	fileMimeType := "audio/ogg; codecs=opus"
+
+	if strings.Contains(mimeType, "audio/webm") {
+		extension = ".ogg"
+		fileMimeType = "audio/ogg; codecs=opus" // WhatsApp prefiere OGG Opus
+	} else if strings.Contains(mimeType, "audio/ogg") || strings.Contains(mimeType, "audio/opus") {
+		extension = ".ogg"
+		fileMimeType = "audio/ogg; codecs=opus"
+	} else if strings.Contains(mimeType, "audio/mpeg") || strings.Contains(mimeType, "audio/mp3") {
+		extension = ".mp3"
+		fileMimeType = "audio/mpeg"
+	}
+
+	// Crear parte del archivo con Content-Type específico
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="audio%s"`, extension))
+	h.Set("Content-Type", fileMimeType)
+
+	part, err := writer.CreatePart(h)
+	if err != nil {
+		return "", fmt.Errorf("error creating form file: %w", err)
+	}
+
+	if _, err := part.Write(data); err != nil {
+		return "", fmt.Errorf("error writing file data: %w", err)
+	}
+
+	// Agregar type
+	writer.WriteField("type", mimeType)
+
+	// Cerrar writer
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("error closing multipart writer: %w", err)
+	}
+
+	// Crear request
+	req, err := http.NewRequest("POST", url, &requestBody)
+	if err != nil {
+		return "", fmt.Errorf("error creating upload request: %w", err)
+	}
+
+	// Headers
+	req.Header.Set("Authorization", "Bearer "+a.accessToken)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Ejecutar request
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error uploading media: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Leer respuesta
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading upload response: %w", err)
+	}
+
+	// Verificar status
+	if resp.StatusCode != http.StatusOK {
+		a.logger.Error("WhatsApp media upload failed", "status", resp.StatusCode, "body", string(body))
+		return "", fmt.Errorf("media upload failed (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Parsear respuesta
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("error parsing upload response: %w", err)
+	}
+
+	a.logger.Info("Media uploaded successfully", "media_id", result.ID)
+	return result.ID, nil
 }
 
 // checkRateLimit verifica el pair rate limit (1 mensaje cada 6s por usuario)

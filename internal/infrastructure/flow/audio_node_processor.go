@@ -44,16 +44,23 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 	if hasRecordedAudio && recordedAudio != "" {
 		// Extraer el audio base64
 		audioData := recordedAudio
+		mimeType := "audio/ogg; codecs=opus" // WhatsApp usa OGG Opus
+		
 		if strings.HasPrefix(audioData, "data:audio/") {
 			// Formato: data:audio/webm;codecs=opus;base64,UklGRiQ...
 			parts := strings.Split(audioData, ",")
 			if len(parts) > 1 {
+				// Extraer el mime type
+				headerParts := strings.Split(parts[0], ";")
+				if len(headerParts) > 0 {
+					mimeType = strings.TrimPrefix(headerParts[0], "data:")
+				}
 				audioData = parts[1]
 			}
 		}
 
 		// Decodificar base64
-		_, err := base64.StdEncoding.DecodeString(audioData)
+		audioBytes, err := base64.StdEncoding.DecodeString(audioData)
 		if err != nil {
 			p.logger.Error(fmt.Sprintf("Error decoding audio: %v", err))
 			return &ProcessResult{
@@ -62,22 +69,27 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 			}, err
 		}
 
-		// TODO: En producción, deberías:
-		// 1. Subir el audio a un servidor/storage (S3, etc.)
-		// 2. Obtener una URL pública
-		// 3. Enviar la URL a WhatsApp
+		p.logger.Info(fmt.Sprintf("Sending audio: %d bytes, mime: %s", len(audioBytes), mimeType))
 
-		// Por ahora, enviar mensaje de texto indicando que se enviaría audio
+		// Extraer número de teléfono del ConversationID (formato: phone@instance)
+		phone := session.ConversationID
+		if idx := strings.Index(session.ConversationID, "@"); idx != -1 {
+			phone = session.ConversationID[:idx]
+		}
+
+		// Crear mensaje con audio embebido en base64
+		// El MessagingService lo subirá a WhatsApp si es necesario
 		message := &entities.Message{
 			TenantID:       session.TenantID,
 			InstanceID:     session.InstanceID,
 			ConversationID: session.ConversationID,
-			To:             session.ConversationID,
+			To:             phone, // Solo el número de teléfono
 			Direction:      "out",
 			MessageData: entities.MessageData{
-				Type: "text",
-				Text: &entities.TextContent{
-					Body: "🎵 [Audio message would be sent here]",
+				Type: "audio",
+				Media: &entities.MediaContent{
+					MimeType: mimeType,
+					Data:     audioBytes,
 				},
 			},
 		}
@@ -90,6 +102,8 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 				ErrorMessage: fmt.Sprintf("Error sending message: %v", err),
 			}, err
 		}
+		
+		p.logger.Info("Audio sent successfully")
 
 		// Si también espera respuesta de voz
 		if waitForVoiceResponse {
@@ -108,12 +122,18 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 
 	// CASO 2: Solo solicitar audio al usuario
 	if waitForVoiceResponse {
+		// Extraer número de teléfono del ConversationID (formato: phone@instance)
+		phone := session.ConversationID
+		if idx := strings.Index(session.ConversationID, "@"); idx != -1 {
+			phone = session.ConversationID[:idx]
+		}
+
 		// Enviar mensaje solicitando audio
 		message := &entities.Message{
 			TenantID:       session.TenantID,
 			InstanceID:     session.InstanceID,
 			ConversationID: session.ConversationID,
-			To:             session.ConversationID,
+			To:             phone, // Solo el número de teléfono
 			Direction:      "out",
 			MessageData: entities.MessageData{
 				Type: "text",

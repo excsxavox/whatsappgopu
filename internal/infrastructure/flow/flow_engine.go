@@ -60,7 +60,7 @@ func (e *flowEngine) StartFlow(ctx context.Context, conversationID string, flowI
 	}
 
 	// Crear nueva sesión
-	session := entities.NewFlowSession(conversationID, flowID, flow.EntryNodeID, tenantID, instanceID)
+	session := entities.NewFlowSession(conversationID, flowID, flow.GetEntryNodeID(), tenantID, instanceID)
 
 	// Guardar sesión
 	err = e.sessionRepo.Save(ctx, session)
@@ -69,9 +69,9 @@ func (e *flowEngine) StartFlow(ctx context.Context, conversationID string, flowI
 	}
 
 	// Procesar el nodo de entrada
-	entryNode := flow.GetNodeByID(flow.EntryNodeID)
+	entryNode := flow.GetNodeByID(flow.GetEntryNodeID())
 	if entryNode == nil {
-		return nil, fmt.Errorf("entry node %s not found in flow", flow.EntryNodeID)
+		return nil, fmt.Errorf("entry node %s not found in flow", flow.GetEntryNodeID())
 	}
 
 	err = e.ProcessNode(ctx, session, entryNode)
@@ -128,10 +128,14 @@ func (e *flowEngine) ProcessMessage(ctx context.Context, session *entities.FlowS
 		case "interactive":
 			// Botón presionado
 			if message.MessageData.Interactive != nil {
-				if message.MessageData.Interactive.ButtonReply != nil && message.MessageData.Interactive.ButtonReply.ID != "" {
-					value = message.MessageData.Interactive.ButtonReply.ID
-				} else if message.MessageData.Interactive.ListReply != nil && message.MessageData.Interactive.ListReply.ID != "" {
-					value = message.MessageData.Interactive.ListReply.ID
+				if buttonReply, ok := message.MessageData.Interactive["button_reply"].(map[string]interface{}); ok {
+					if id, ok := buttonReply["id"].(string); ok && id != "" {
+						value = id
+					}
+				} else if listReply, ok := message.MessageData.Interactive["list_reply"].(map[string]interface{}); ok {
+					if id, ok := listReply["id"].(string); ok && id != "" {
+						value = id
+					}
 				}
 			}
 		default:
