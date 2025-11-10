@@ -49,10 +49,13 @@ func (p *TextNodeProcessor) Process(ctx context.Context, session *entities.FlowS
 		TenantID:       session.TenantID,
 		InstanceID:     session.InstanceID,
 		ConversationID: session.ConversationID,
-		From:           session.ConversationID, // Número del usuario
-		Type:           "text",
-		Text: entities.MessageText{
-			Body: content,
+		To:             session.ConversationID, // Número del usuario
+		Direction:      "out",
+		MessageData: entities.MessageData{
+			Type: "text",
+			Text: &entities.TextContent{
+				Body: content,
+			},
 		},
 	}
 

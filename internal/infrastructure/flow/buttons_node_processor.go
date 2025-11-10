@@ -40,8 +40,8 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 	// Reemplazar variables en el contenido
 	content = p.variableReplacer.ReplaceInString(content, session.Variables)
 
-	// Construir botones
-	buttons := []entities.InteractiveButton{}
+	// Construir botones para el payload (no usar entidades, usar map)
+	buttons := []map[string]interface{}{}
 	for _, btnConfig := range buttonsConfig {
 		btnMap, ok := btnConfig.(map[string]interface{})
 		if !ok {
@@ -49,17 +49,16 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 		}
 
 		btnID, _ := btnMap["id"].(string)
-		btnType, _ := btnMap["type"].(string)
 		btnTitle, _ := btnMap["title"].(string)
 
 		// Reemplazar variables en título
 		btnTitle = p.variableReplacer.ReplaceInString(btnTitle, session.Variables)
 
-		buttons = append(buttons, entities.InteractiveButton{
-			Type: btnType,
-			Reply: entities.InteractiveReply{
-				ID:    btnID,
-				Title: btnTitle,
+		buttons = append(buttons, map[string]interface{}{
+			"type": "reply",
+			"reply": map[string]interface{}{
+				"id":    btnID,
+				"title": btnTitle,
 			},
 		})
 	}
@@ -69,17 +68,21 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 		TenantID:       session.TenantID,
 		InstanceID:     session.InstanceID,
 		ConversationID: session.ConversationID,
-		From:           session.ConversationID,
-		Type:           "interactive",
-		Interactive: entities.MessageInteractive{
-			Type: "button",
-			Body: entities.InteractiveBody{
-				Text: content,
-			},
-			Action: entities.InteractiveAction{
-				Buttons: buttons,
+		To:             session.ConversationID,
+		Direction:      "out",
+		MessageData: entities.MessageData{
+			Type: "interactive",
+			Interactive: &entities.InteractiveContent{
+				Type: "button",
 			},
 		},
+	}
+
+	// Agregar los botones como metadata adicional (el adapter los manejará)
+	// Por ahora, enviamos un mensaje de texto con los botones como fallback
+	message.MessageData.Type = "text"
+	message.MessageData.Text = &entities.TextContent{
+		Body: content,
 	}
 
 	// Enviar mensaje

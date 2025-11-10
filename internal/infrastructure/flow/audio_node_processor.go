@@ -72,10 +72,13 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 			TenantID:       session.TenantID,
 			InstanceID:     session.InstanceID,
 			ConversationID: session.ConversationID,
-			From:           session.ConversationID,
-			Type:           "text",
-			Text: entities.MessageText{
-				Body: "🎵 [Audio message would be sent here]",
+			To:             session.ConversationID,
+			Direction:      "out",
+			MessageData: entities.MessageData{
+				Type: "text",
+				Text: &entities.TextContent{
+					Body: "🎵 [Audio message would be sent here]",
+				},
 			},
 		}
 
@@ -110,10 +113,13 @@ func (p *AudioNodeProcessor) Process(ctx context.Context, session *entities.Flow
 			TenantID:       session.TenantID,
 			InstanceID:     session.InstanceID,
 			ConversationID: session.ConversationID,
-			From:           session.ConversationID,
-			Type:           "text",
-			Text: entities.MessageText{
-				Body: "🎤 Por favor, envía un mensaje de voz",
+			To:             session.ConversationID,
+			Direction:      "out",
+			MessageData: entities.MessageData{
+				Type: "text",
+				Text: &entities.TextContent{
+					Body: "🎤 Por favor, envía un mensaje de voz",
+				},
 			},
 		}
 
