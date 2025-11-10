@@ -13,18 +13,21 @@ import (
 	"sync"
 	"time"
 
+	"whatsapp-api-go/internal/application/usecases"
 	"whatsapp-api-go/internal/domain/entities"
 	"whatsapp-api-go/internal/domain/ports"
 )
 
 // WebhookHandler maneja los webhooks de WhatsApp Cloud API
 type WebhookHandler struct {
-	verifyToken        string
-	appSecret          string
-	sendMessageUseCase ports.SendMessageUseCase
-	messageRepo        ports.MessageRepository
-	instanceID         string // WABA_PHONE_ID
-	logger             ports.Logger
+	verifyToken              string
+	appSecret                string
+	sendMessageUseCase       ports.SendMessageUseCase
+	messageRepo              ports.MessageRepository
+	instanceID               string // WABA_PHONE_ID
+	logger                   ports.Logger
+	startFlowUseCase         *usecases.StartFlowUseCase
+	processFlowMessageUseCase *usecases.ProcessFlowMessageUseCase
 
 	// Idempotencia simple (en producción usar Redis con TTL)
 	seenMu      sync.RWMutex
@@ -38,16 +41,20 @@ func NewWebhookHandler(
 	sendMessageUseCase ports.SendMessageUseCase,
 	messageRepo ports.MessageRepository,
 	logger ports.Logger,
+	startFlowUseCase *usecases.StartFlowUseCase,
+	processFlowMessageUseCase *usecases.ProcessFlowMessageUseCase,
 ) *WebhookHandler {
 	h := &WebhookHandler{
-		verifyToken:        verifyToken,
-		appSecret:          appSecret,
-		sendMessageUseCase: sendMessageUseCase,
-		messageRepo:        messageRepo,
-		instanceID:         instanceID,
-		logger:             logger,
-		seenWamids:         make(map[string]time.Time),
-		cleanupTick:        time.NewTicker(10 * time.Minute),
+		verifyToken:               verifyToken,
+		appSecret:                 appSecret,
+		sendMessageUseCase:        sendMessageUseCase,
+		messageRepo:               messageRepo,
+		instanceID:                instanceID,
+		logger:                    logger,
+		startFlowUseCase:          startFlowUseCase,
+		processFlowMessageUseCase: processFlowMessageUseCase,
+		seenWamids:                make(map[string]time.Time),
+		cleanupTick:               time.NewTicker(10 * time.Minute),
 	}
 
 	// Cleanup periódico de wamids viejos (> 1 hora)
@@ -225,14 +232,44 @@ func (h *WebhookHandler) processWebhook(body []byte) {
 					h.logger.Info("✅ Mensaje guardado en MongoDB", "wamid", msg.ID)
 				}
 
-				// Procesar solo mensajes de texto por ahora (respuesta automática)
-				if msg.Type == "text" && msg.Text.Body != "" {
-					// Enviar respuesta automática
-					responseText := fmt.Sprintf("✅ Recibido: %s", msg.Text.Body)
-
-					_, err := h.sendMessageUseCase.Execute(context.Background(), msg.From, responseText)
+				// INTEGRACIÓN DE FLUJOS
+				// Intentar procesar mensaje en flujo activo
+				if h.processFlowMessageUseCase != nil {
+					err := h.processFlowMessageUseCase.Execute(context.Background(), incomingMsg)
 					if err != nil {
-						h.logger.Error("Error enviando respuesta", "error", err, "to", msg.From)
+						h.logger.Error("Error procesando mensaje en flujo", "error", err, "wamid", msg.ID)
+					} else {
+						h.logger.Info("✅ Mensaje procesado en flujo", "wamid", msg.ID)
+						continue // Saltar respuesta automática si se procesó en flujo
+					}
+				}
+
+				// Si no se procesó en flujo, iniciar flujo por defecto
+				if h.startFlowUseCase != nil {
+					h.logger.Info("No hay sesión activa, iniciando flujo por defecto", "from", msg.From)
+					_, err := h.startFlowUseCase.Execute(context.Background(), usecases.StartFlowRequest{
+						ConversationID: msg.From,
+						FlowID:         "", // Usar flujo por defecto
+						TenantID:       "default",
+						InstanceID:     h.instanceID,
+					})
+					if err != nil {
+						h.logger.Error("Error iniciando flujo", "error", err, "from", msg.From)
+						
+						// Fallback: respuesta automática simple
+						if msg.Type == "text" && msg.Text.Body != "" {
+							responseText := fmt.Sprintf("✅ Recibido: %s", msg.Text.Body)
+							_, _ = h.sendMessageUseCase.Execute(context.Background(), msg.From, responseText)
+						}
+					}
+				} else {
+					// Sin flujos configurados, usar respuesta automática
+					if msg.Type == "text" && msg.Text.Body != "" {
+						responseText := fmt.Sprintf("✅ Recibido: %s", msg.Text.Body)
+						_, err := h.sendMessageUseCase.Execute(context.Background(), msg.From, responseText)
+						if err != nil {
+							h.logger.Error("Error enviando respuesta", "error", err, "to", msg.From)
+						}
 					}
 				}
 			}

@@ -12,8 +12,9 @@ import (
 
 // MongoClient encapsula la conexión a MongoDB
 type MongoClient struct {
-	client *mongo.Client
-	db     *mongo.Database
+	client   *mongo.Client
+	db       *mongo.Database
+	Database *mongo.Database // Exportada para uso en repositorios
 }
 
 // NewMongoClient crea una nueva conexión a MongoDB
@@ -35,9 +36,11 @@ func NewMongoClient(ctx context.Context, mongoURI, dbName string) (*MongoClient,
 		return nil, fmt.Errorf("error al hacer ping a MongoDB: %w", err)
 	}
 
+	db := client.Database(dbName)
 	return &MongoClient{
-		client: client,
-		db:     client.Database(dbName),
+		client:   client,
+		db:       db,
+		Database: db, // Exportar para repositorios
 	}, nil
 }
 
@@ -151,6 +154,80 @@ func (m *MongoClient) CreateIndexes(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("error creando índice companies.is_active: %w", err)
+	}
+
+	// Índices para flows
+	flowsCollection := m.db.Collection("flows")
+
+	// Índice por instance_id + is_active
+	_, err = flowsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "instance_id", Value: 1},
+			{Key: "is_active", Value: 1},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flows.instance_id: %w", err)
+	}
+
+	// Índice por tenant_id
+	_, err = flowsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "tenant_id", Value: 1}},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flows.tenant_id: %w", err)
+	}
+
+	// Índice por is_default + instance_id (para buscar flujo por defecto)
+	_, err = flowsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "is_default", Value: 1},
+			{Key: "instance_id", Value: 1},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flows.is_default: %w", err)
+	}
+
+	// Índices para flow_sessions
+	flowSessionsCollection := m.db.Collection("flow_sessions")
+
+	// Índice por conversation_id + status (buscar sesión activa)
+	_, err = flowSessionsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "conversation_id", Value: 1},
+			{Key: "status", Value: 1},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flow_sessions.conversation_id: %w", err)
+	}
+
+	// Índice por flow_id
+	_, err = flowSessionsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "flow_id", Value: 1}},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flow_sessions.flow_id: %w", err)
+	}
+
+	// Índice por last_activity_at + status (para cleanup de sesiones inactivas)
+	_, err = flowSessionsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "status", Value: 1},
+			{Key: "last_activity_at", Value: 1},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flow_sessions.last_activity_at: %w", err)
+	}
+
+	// Índice por instance_id
+	_, err = flowSessionsCollection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "instance_id", Value: 1}},
+	})
+	if err != nil {
+		return fmt.Errorf("error creando índice flow_sessions.instance_id: %w", err)
 	}
 
 	return nil

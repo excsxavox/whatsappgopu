@@ -15,6 +15,7 @@ import (
 	"whatsapp-api-go/internal/infrastructure/adapters/storage"
 	"whatsapp-api-go/internal/infrastructure/adapters/whatsapp"
 	"whatsapp-api-go/internal/infrastructure/config"
+	"whatsapp-api-go/internal/infrastructure/flow"
 
 	// Utilities
 	"whatsapp-api-go/pkg/logger"
@@ -76,6 +77,8 @@ func main() {
 	messageRepo := storage.NewMongoMessageRepository(mongoClient.GetDatabase())
 	sessionRepo := storage.NewMongoSessionRepository(mongoClient.GetDatabase())
 	companyRepo := storage.NewMongoCompanyRepository(mongoClient.GetDatabase())
+	flowRepo := storage.NewMongoFlowRepository(mongoClient)
+	flowSessionRepo := storage.NewMongoFlowSessionRepository(mongoClient)
 
 	log.Info("✅ Adaptadores inicializados")
 	fmt.Println()
@@ -114,6 +117,31 @@ func main() {
 	log.Info("✅ Casos de uso configurados")
 	fmt.Println()
 
+	// 5.1 Inicializar Motor de Flujos
+	log.Info("🔄 Configurando motor de flujos...")
+	
+	flowEngine := flow.NewFlowEngine(
+		flowRepo,
+		flowSessionRepo,
+		whatsappAdapter,
+		log,
+	)
+
+	startFlowUseCase := usecases.NewStartFlowUseCase(
+		flowEngine,
+		flowRepo,
+		log,
+	)
+
+	processFlowMessageUseCase := usecases.NewProcessFlowMessageUseCase(
+		flowEngine,
+		flowSessionRepo,
+		log,
+	)
+
+	log.Info("✅ Motor de flujos configurado")
+	fmt.Println()
+
 	// 6. Verificar conexión con Cloud API
 	log.Info("📱 Verificando Cloud API...")
 
@@ -139,7 +167,7 @@ func main() {
 		log,
 	)
 
-	// Handler de Webhooks de Meta
+	// Handler de Webhooks de Meta (con flujos integrados)
 	webhookHandler := http.NewWebhookHandler(
 		cfg.VerifyToken,
 		cfg.AppSecret,
@@ -147,6 +175,8 @@ func main() {
 		sendMessageUseCase,
 		messageRepo,
 		log,
+		startFlowUseCase,
+		processFlowMessageUseCase,
 	)
 
 	// Handler de Empresas

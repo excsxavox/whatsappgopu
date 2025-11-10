@@ -1,0 +1,39 @@
+# Configuración para Azure App Service
+# Deployment con GitHub Actions
+
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AZURE_WEBAPP_NAME: whatsapp-api-go    # Cambia esto por tu nombre de app
+  GO_VERSION: '1.24'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Build application
+      run: |
+        go mod download
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o whatsapp-api-server cmd/server/main.go
+
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: .
+

@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Compilar aplicación
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o whatsapp-api ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o whatsapp-api-server ./cmd/server
 
 # Runtime stage
 FROM alpine:latest
@@ -23,7 +23,7 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /root/
 
 # Copiar binario compilado
-COPY --from=builder /app/whatsapp-api .
+COPY --from=builder /app/whatsapp-api-server .
 
 # Puerto
 EXPOSE 8080
@@ -33,5 +33,5 @@ ENV API_PORT=8080
 ENV LOG_LEVEL=INFO
 
 # Ejecutar aplicación
-CMD ["./whatsapp-api"]
+CMD ["./whatsapp-api-server"]
 
