@@ -64,11 +64,16 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 
 	// Construir botones para el payload (no usar entidades, usar map)
 	buttons := []map[string]interface{}{}
-	for _, btnConfig := range buttonsConfig {
+	p.logger.Info(fmt.Sprintf("📋 Procesando %d botones config", len(buttonsConfig)))
+	
+	for i, btnConfig := range buttonsConfig {
 		btnMap, ok := btnConfig.(map[string]interface{})
 		if !ok {
+			p.logger.Warn(fmt.Sprintf("⚠️ Botón %d no es un map[string]interface{}", i))
 			continue
 		}
+
+		p.logger.Info(fmt.Sprintf("🔍 Botón %d estructura: %+v", i, btnMap))
 
 		var btnID, btnTitle string
 		
@@ -76,10 +81,18 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 		if replyData, ok := btnMap["reply"].(map[string]interface{}); ok {
 			btnID, _ = replyData["id"].(string)
 			btnTitle, _ = replyData["title"].(string)
+			p.logger.Info(fmt.Sprintf("✅ Botón %d (Formato 1): id=%s, title=%s", i, btnID, btnTitle))
 		} else {
 			// Formato 2: Viene directamente con id y title
 			btnID, _ = btnMap["id"].(string)
 			btnTitle, _ = btnMap["title"].(string)
+			p.logger.Info(fmt.Sprintf("✅ Botón %d (Formato 2): id=%s, title=%s", i, btnID, btnTitle))
+		}
+
+		// Solo agregar si tiene ID y título válidos
+		if btnID == "" || btnTitle == "" {
+			p.logger.Warn(fmt.Sprintf("⚠️ Botón %d omitido: id o title vacío (id=%s, title=%s)", i, btnID, btnTitle))
+			continue
 		}
 
 		// Reemplazar variables en título
@@ -92,6 +105,18 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 				"title": btnTitle,
 			},
 		})
+		p.logger.Info(fmt.Sprintf("✅ Botón %d agregado al array", i))
+	}
+	
+	p.logger.Info(fmt.Sprintf("📊 Total botones construidos: %d", len(buttons)))
+
+	// Validar que haya botones
+	if len(buttons) == 0 {
+		p.logger.Error("❌ No se construyeron botones válidos")
+		return &ProcessResult{
+			StopFlow:     true,
+			ErrorMessage: "No se pudieron construir botones válidos",
+		}, fmt.Errorf("no valid buttons constructed")
 	}
 
 	// Extraer número de teléfono del ConversationID (formato: phone@instance)
