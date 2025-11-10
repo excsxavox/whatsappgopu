@@ -62,7 +62,8 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 	header = p.variableReplacer.ReplaceInString(header, session.Variables)
 	footer = p.variableReplacer.ReplaceInString(footer, session.Variables)
 
-	// Construir botones para el payload (no usar entidades, usar map)
+	// Los botones ya vienen en el formato correcto de WhatsApp desde Mongo
+	// Solo necesitamos copiarlos y reemplazar variables en los títulos
 	buttons := []map[string]interface{}{}
 	p.logger.Info(fmt.Sprintf("📋 Procesando %d botones config", len(buttonsConfig)))
 	
@@ -73,39 +74,33 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 			continue
 		}
 
-		p.logger.Info(fmt.Sprintf("🔍 Botón %d estructura: %+v", i, btnMap))
+		p.logger.Info(fmt.Sprintf("🔍 Botón %d estructura completa: %+v", i, btnMap))
 
-		var btnID, btnTitle string
+		// Los botones vienen con esta estructura:
+		// { "type": "reply", "reply": { "id": "...", "title": "..." } }
+		// Solo necesitamos copiarlos y reemplazar variables en el título
 		
-		// Formato 1: Ya viene con type: "reply" y reply: {id, title}
 		if replyData, ok := btnMap["reply"].(map[string]interface{}); ok {
-			btnID, _ = replyData["id"].(string)
-			btnTitle, _ = replyData["title"].(string)
-			p.logger.Info(fmt.Sprintf("✅ Botón %d (Formato 1): id=%s, title=%s", i, btnID, btnTitle))
+			title, _ := replyData["title"].(string)
+			id, _ := replyData["id"].(string)
+			
+			p.logger.Info(fmt.Sprintf("✅ Botón %d - id: %s, title: %s", i, id, title))
+			
+			// Reemplazar variables en el título
+			title = p.variableReplacer.ReplaceInString(title, session.Variables)
+			
+			// Crear copia del botón con el título procesado
+			buttons = append(buttons, map[string]interface{}{
+				"type": btnMap["type"],
+				"reply": map[string]interface{}{
+					"id":    id,
+					"title": title,
+				},
+			})
+			p.logger.Info(fmt.Sprintf("✅ Botón %d agregado correctamente", i))
 		} else {
-			// Formato 2: Viene directamente con id y title
-			btnID, _ = btnMap["id"].(string)
-			btnTitle, _ = btnMap["title"].(string)
-			p.logger.Info(fmt.Sprintf("✅ Botón %d (Formato 2): id=%s, title=%s", i, btnID, btnTitle))
+			p.logger.Warn(fmt.Sprintf("⚠️ Botón %d no tiene estructura 'reply', se omite", i))
 		}
-
-		// Solo agregar si tiene ID y título válidos
-		if btnID == "" || btnTitle == "" {
-			p.logger.Warn(fmt.Sprintf("⚠️ Botón %d omitido: id o title vacío (id=%s, title=%s)", i, btnID, btnTitle))
-			continue
-		}
-
-		// Reemplazar variables en título
-		btnTitle = p.variableReplacer.ReplaceInString(btnTitle, session.Variables)
-
-		buttons = append(buttons, map[string]interface{}{
-			"type": "reply",
-			"reply": map[string]interface{}{
-				"id":    btnID,
-				"title": btnTitle,
-			},
-		})
-		p.logger.Info(fmt.Sprintf("✅ Botón %d agregado al array", i))
 	}
 	
 	p.logger.Info(fmt.Sprintf("📊 Total botones construidos: %d", len(buttons)))

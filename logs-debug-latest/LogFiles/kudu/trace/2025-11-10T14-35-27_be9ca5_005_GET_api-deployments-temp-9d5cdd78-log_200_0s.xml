@@ -1,0 +1,6 @@
+<step title="Incoming Request" date="2025-11-10T14:35:27.368" instance="be9ca5" url="/api/deployments/temp-9d5cdd78/log" method="GET" type="request" pid="768,1,15" Host="whatsapp-api-go-dpb5cgbnaec2gdf2.scm.eastus-01.azurewebsites.net" User-Agent="vscode-azureappservice/0.26.4 core-rest-pipeline/1.20.0 Node/22.19.0 OS/(x64-Windows_NT-10.0.26200)" Accept-Encoding="gzip,deflate" Accept-Language="en" Authorization="Bea..." x-ms-correlation-request-id="66a41e64-e0ce-426d-b1c9-90532a675d46" x-ms-client-request-id="4b36cd51-6517-45bf-be7e-2e8baf1d6909" X-ARR-LOG-ID="4b36cd51-6517-45bf-be7e-2e8baf1d6909" CLIENT-IP="186.4.130.232:19020" X-SITE-DEPLOYMENT-ID="whatsapp-api-go" WAS-DEFAULT-HOSTNAME="whatsapp-api-go-dpb5cgbnaec2gdf2.scm.eastus-01.azurewebsites.net" X-Forwarded-Proto="https" X-AppService-Proto="https" X-Forwarded-TlsVersion="1.3" X-WAWS-Unencoded-URL="/api/deployments/temp-9d5cdd78/log" X-Client-IP="186.4.130.232" X-Client-Port="19020" >
+  <step title="DeploymentService.GetLogEntry" date="2025-11-10T14:35:27.389" >
+    <step title="DeploymentManager.GetLogEntries(id:temp-9d5cdd78)" date="2025-11-10T14:35:27.394" /><!-- duration: 12ms -->
+  </step><!-- duration: 23ms -->
+  <step title="Outgoing response" date="2025-11-10T14:35:27.428" type="response" statusCode="200" statusText="OK" /><!-- duration: 5ms -->
+</step><!-- duration: 70ms -->
