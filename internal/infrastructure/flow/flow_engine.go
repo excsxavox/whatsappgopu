@@ -103,27 +103,35 @@ func (e *flowEngine) ProcessMessage(ctx context.Context, session *entities.FlowS
 		// Extraer valor según tipo de mensaje
 		var value interface{}
 
-		switch message.Type {
+		switch message.MessageData.Type {
 		case "text":
-			value = message.Text.Body
+			if message.MessageData.Text != nil {
+				value = message.MessageData.Text.Body
+			}
 		case "image":
-			if message.Image.ID != "" {
-				value = message.Image.ID
-			} else {
-				value = message.Image.Link
+			if message.MessageData.Media != nil {
+				if message.MessageData.Media.Storage != nil && message.MessageData.Media.Storage.MediaID != "" {
+					value = message.MessageData.Media.Storage.MediaID
+				} else if message.MessageData.Media.Storage != nil {
+					value = message.MessageData.Media.Storage.PublicURL
+				}
 			}
 		case "audio":
-			value = message.Audio.ID
+			if message.MessageData.Media != nil && message.MessageData.Media.Storage != nil {
+				value = message.MessageData.Media.Storage.MediaID
+			}
 		case "interactive":
 			// Botón presionado
-			if message.Interactive.ButtonReply.ID != "" {
-				value = message.Interactive.ButtonReply.ID
-			} else if message.Interactive.ListReply.ID != "" {
-				value = message.Interactive.ListReply.ID
+			if message.MessageData.Interactive != nil {
+				if message.MessageData.Interactive.ButtonReply != nil && message.MessageData.Interactive.ButtonReply.ID != "" {
+					value = message.MessageData.Interactive.ButtonReply.ID
+				} else if message.MessageData.Interactive.ListReply != nil && message.MessageData.Interactive.ListReply.ID != "" {
+					value = message.MessageData.Interactive.ListReply.ID
+				}
 			}
 		default:
-			e.logger.Warn(fmt.Sprintf("Unsupported message type: %s", message.Type))
-			return fmt.Errorf("unsupported message type: %s", message.Type)
+			e.logger.Warn(fmt.Sprintf("Unsupported message type: %s", message.MessageData.Type))
+			return fmt.Errorf("unsupported message type: %s", message.MessageData.Type)
 		}
 
 		// Guardar en variable
