@@ -93,7 +93,7 @@ func (e *flowEngine) ProcessMessage(ctx context.Context, session *entities.FlowS
 	session.UpdateActivity()
 
 	// Buscar el flujo
-	flow, err := e.flowRepo.FindByID(ctx, session.FlowID)
+	_, err := e.flowRepo.FindByID(ctx, session.FlowID)
 	if err != nil {
 		return fmt.Errorf("flow not found: %w", err)
 	}
@@ -109,16 +109,21 @@ func (e *flowEngine) ProcessMessage(ctx context.Context, session *entities.FlowS
 				value = message.MessageData.Text.Body
 			}
 		case "image":
-			if message.MessageData.Media != nil {
-				if message.MessageData.Media.Storage != nil && message.MessageData.Media.Storage.MediaID != "" {
-					value = message.MessageData.Media.Storage.MediaID
-				} else if message.MessageData.Media.Storage != nil {
+			if message.MessageData.Media != nil && message.MessageData.Media.Storage != nil {
+				// Preferir la URL pública, o la key si no hay URL
+				if message.MessageData.Media.Storage.PublicURL != "" {
 					value = message.MessageData.Media.Storage.PublicURL
+				} else {
+					value = message.MessageData.Media.Storage.Key
 				}
 			}
 		case "audio":
 			if message.MessageData.Media != nil && message.MessageData.Media.Storage != nil {
-				value = message.MessageData.Media.Storage.MediaID
+				if message.MessageData.Media.Storage.PublicURL != "" {
+					value = message.MessageData.Media.Storage.PublicURL
+				} else {
+					value = message.MessageData.Media.Storage.Key
+				}
 			}
 		case "interactive":
 			// Botón presionado
