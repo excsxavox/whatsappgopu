@@ -108,5 +108,3 @@ func (r *mongoFlowSessionRepository) FindInactiveSessions(ctx context.Context, m
 
 	return sessions, nil
 }
-
-

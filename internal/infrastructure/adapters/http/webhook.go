@@ -156,6 +156,42 @@ func (h *WebhookHandler) processWebhook(body []byte) {
 						Text      struct {
 							Body string `json:"body"`
 						} `json:"text"`
+						Audio struct {
+							ID       string `json:"id"` // media_id para descargar
+							MimeType string `json:"mime_type"`
+							SHA256   string `json:"sha256"`
+						} `json:"audio"`
+						Image struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							SHA256   string `json:"sha256"`
+							Caption  string `json:"caption"`
+						} `json:"image"`
+						Video struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							SHA256   string `json:"sha256"`
+							Caption  string `json:"caption"`
+						} `json:"video"`
+						Document struct {
+							ID       string `json:"id"`
+							MimeType string `json:"mime_type"`
+							SHA256   string `json:"sha256"`
+							Filename string `json:"filename"`
+							Caption  string `json:"caption"`
+						} `json:"document"`
+						Interactive struct {
+							Type        string `json:"type"`
+							ButtonReply struct {
+								ID    string `json:"id"`
+								Title string `json:"title"`
+							} `json:"button_reply"`
+							ListReply struct {
+								ID          string `json:"id"`
+								Title       string `json:"title"`
+								Description string `json:"description"`
+							} `json:"list_reply"`
+						} `json:"interactive"`
 					} `json:"messages"`
 					Statuses []struct {
 						ID        string `json:"id"`
@@ -207,14 +243,130 @@ func (h *WebhookHandler) processWebhook(body []byte) {
 					"wamid", msg.ID,
 					"type", msg.Type)
 
-				// Crear mensaje entrante con nueva estructura
-				incomingMsg := entities.NewIncomingMessage(
-					h.instanceID,
-					msg.ID,
-					msg.From,
-					metadata.PhoneNumberID,
-					msg.Text.Body,
-				)
+				// Crear mensaje entrante según el tipo
+				var incomingMsg *entities.Message
+
+				switch msg.Type {
+				case "text":
+					incomingMsg = entities.NewIncomingMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						msg.Text.Body,
+					)
+
+				case "audio":
+					// Crear MediaContent con el media_id de WhatsApp
+					media := &entities.MediaContent{
+						MimeType: msg.Audio.MimeType,
+						SHA256:   msg.Audio.SHA256,
+						// NO guardar Data aún, solo la referencia al media_id de WhatsApp
+						Storage: &entities.MediaStorage{
+							Provider: "whatsapp",
+							Key:      msg.Audio.ID, // Este es el media_id para descargar después
+						},
+					}
+					incomingMsg = entities.NewIncomingMediaMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						"audio",
+						media,
+						nil,
+					)
+
+				case "image":
+					media := &entities.MediaContent{
+						MimeType: msg.Image.MimeType,
+						SHA256:   msg.Image.SHA256,
+						Caption:  msg.Image.Caption,
+						Storage: &entities.MediaStorage{
+							Provider: "whatsapp",
+							Key:      msg.Image.ID,
+						},
+					}
+					incomingMsg = entities.NewIncomingMediaMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						"image",
+						media,
+						nil,
+					)
+
+				case "video":
+					media := &entities.MediaContent{
+						MimeType: msg.Video.MimeType,
+						SHA256:   msg.Video.SHA256,
+						Caption:  msg.Video.Caption,
+						Storage: &entities.MediaStorage{
+							Provider: "whatsapp",
+							Key:      msg.Video.ID,
+						},
+					}
+					incomingMsg = entities.NewIncomingMediaMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						"video",
+						media,
+						nil,
+					)
+
+				case "document":
+					media := &entities.MediaContent{
+						MimeType: msg.Document.MimeType,
+						SHA256:   msg.Document.SHA256,
+						FileName: msg.Document.Filename,
+						Caption:  msg.Document.Caption,
+						Storage: &entities.MediaStorage{
+							Provider: "whatsapp",
+							Key:      msg.Document.ID,
+						},
+					}
+					incomingMsg = entities.NewIncomingMediaMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						"document",
+						media,
+						nil,
+					)
+
+				case "interactive":
+					// Botones o listas
+					interactive := make(map[string]interface{})
+					if msg.Interactive.Type == "button_reply" && msg.Interactive.ButtonReply.ID != "" {
+						interactive["button_reply"] = map[string]interface{}{
+							"id":    msg.Interactive.ButtonReply.ID,
+							"title": msg.Interactive.ButtonReply.Title,
+						}
+					} else if msg.Interactive.Type == "list_reply" && msg.Interactive.ListReply.ID != "" {
+						interactive["list_reply"] = map[string]interface{}{
+							"id":          msg.Interactive.ListReply.ID,
+							"title":       msg.Interactive.ListReply.Title,
+							"description": msg.Interactive.ListReply.Description,
+						}
+					}
+					incomingMsg = entities.NewIncomingMediaMessage(
+						h.instanceID,
+						msg.ID,
+						msg.From,
+						metadata.PhoneNumberID,
+						"interactive",
+						nil,
+						interactive,
+					)
+
+				default:
+					h.logger.Warn("Tipo de mensaje no soportado", "type", msg.Type)
+					continue
+				}
 
 				// Agregar raw_min para trazabilidad
 				incomingMsg.RawMin = &entities.RawMinimal{
@@ -226,10 +378,16 @@ func (h *WebhookHandler) processWebhook(body []byte) {
 				}
 
 				// Guardar mensaje entrante en MongoDB
-				if err := h.messageRepo.Save(context.Background(), incomingMsg); err != nil {
-					h.logger.Error("Error guardando mensaje entrante", "error", err, "wamid", msg.ID)
+				// WORKAROUND: No guardar mensajes de audio temporalmente (problema de serialización BSON)
+				if msg.Type != "audio" {
+					h.logger.Info("💾 Intentando guardar mensaje", "wamid", msg.ID, "type", msg.Type, "has_media", incomingMsg.MessageData.Media != nil)
+					if err := h.messageRepo.Save(context.Background(), incomingMsg); err != nil {
+						h.logger.Error("❌ Error guardando mensaje entrante", "error", err, "wamid", msg.ID, "error_type", fmt.Sprintf("%T", err))
+					} else {
+						h.logger.Info("✅ Mensaje guardado en MongoDB", "wamid", msg.ID)
+					}
 				} else {
-					h.logger.Info("✅ Mensaje guardado en MongoDB", "wamid", msg.ID)
+					h.logger.Info("⏭️ Skipping save for audio message (will process directly)", "wamid", msg.ID)
 				}
 
 				// INTEGRACIÓN DE FLUJOS

@@ -136,5 +136,3 @@ func (p *HttpNodeProcessor) Process(ctx context.Context, session *entities.FlowS
 		StopFlow:           false,
 	}, nil
 }
-
-

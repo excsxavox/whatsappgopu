@@ -98,4 +98,3 @@ func (l *ColorLogger) Warn(msg string, args ...interface{}) {
 		fmt.Printf("%s[WARN]%s %s\n", colorYellow, colorReset, msg)
 	}
 }
-

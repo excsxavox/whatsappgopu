@@ -150,5 +150,3 @@ func (vr *VariableReplacer) GetNestedValue(varName string, variables map[string]
 
 	return nil, false
 }
-
-

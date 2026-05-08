@@ -31,31 +31,63 @@ func (p *ConditionNodeProcessor) Process(ctx context.Context, session *entities.
 
 	// Extraer configuración
 	config := node.Config
-	conditionsConfig, _ := config["conditions"].([]interface{})
 
-	// Evaluar cada condición
-	conditionMet := false
-	for _, condConfig := range conditionsConfig {
-		condMap, ok := condConfig.(map[string]interface{})
-		if !ok {
-			continue
+	// Buscar condición en formato "si" (nuevo formato del flow designer)
+	var field string
+	var operator string
+	var expectedValue interface{}
+	var conditionMet bool
+
+	if siConfig, ok := config["si"].(map[string]interface{}); ok {
+		// Formato nuevo: { "si": { "field": "...", "value": "...", "operator": "..." } }
+		field, _ = siConfig["field"].(string)
+		operator, _ = siConfig["operator"].(string)
+		expectedValue = siConfig["value"]
+
+		// Si no hay operador, usar "equals" por defecto
+		if operator == "" {
+			operator = "equals"
 		}
 
-		field, _ := condMap["field"].(string)
-		operator, _ := condMap["operator"].(string)
-		expectedValue := condMap["value"]
+		p.logger.Info(fmt.Sprintf("📊 Evaluating condition: %s %s %v", field, operator, expectedValue))
 
 		// Obtener valor de la variable
-		actualValue, exists := p.variableReplacer.GetNestedValue(field, session.Variables)
+		actualValue, exists := session.GetVariable(field)
 		if !exists {
-			p.logger.Warn(fmt.Sprintf("Variable %s not found in session", field))
-			continue
+			p.logger.Warn(fmt.Sprintf("⚠️ Variable %s not found in session", field))
+			conditionMet = false
+		} else {
+			p.logger.Info(fmt.Sprintf("📝 Variable %s = %v (type: %T)", field, actualValue, actualValue))
+			// Evaluar condición
+			conditionMet = p.evaluateCondition(actualValue, operator, expectedValue)
 		}
+	} else {
+		// Formato antiguo: { "conditions": [ ... ] }
+		conditionsConfig, _ := config["conditions"].([]interface{})
 
-		// Evaluar condición
-		if p.evaluateCondition(actualValue, operator, expectedValue) {
-			conditionMet = true
-			break
+		// Evaluar cada condición
+		for _, condConfig := range conditionsConfig {
+			condMap, ok := condConfig.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			field, _ = condMap["field"].(string)
+			operator, _ = condMap["operator"].(string)
+			expectedValue = condMap["value"]
+
+			// Obtener valor de la variable
+			actualValue, exists := p.variableReplacer.GetNestedValue(field, session.Variables)
+			if !exists {
+				p.logger.Warn(fmt.Sprintf("Variable %s not found in session", field))
+				continue
+			}
+
+			// Evaluar condición
+			if p.evaluateCondition(actualValue, operator, expectedValue) {
+				conditionMet = true
+				break
+			}
 		}
 	}
 
@@ -65,7 +97,7 @@ func (p *ConditionNodeProcessor) Process(ctx context.Context, session *entities.
 		condition = "yes"
 	}
 
-	p.logger.Info(fmt.Sprintf("Condition evaluated to: %s", condition))
+	p.logger.Info(fmt.Sprintf("✅ Condition evaluated to: %s", condition))
 
 	// El FlowEngine se encargará de buscar el edge correcto
 	return &ProcessResult{
@@ -92,6 +124,10 @@ func (p *ConditionNodeProcessor) evaluateCondition(actual interface{}, operator 
 		return p.compareValues(actual, expected) <= 0
 	case "contains":
 		return p.contains(actual, expected)
+	case "length_equals":
+		return p.lengthEquals(actual, expected)
+	case "has_digits":
+		return p.hasDigits(actual, expected)
 	default:
 		p.logger.Warn(fmt.Sprintf("Unknown operator: %s", operator))
 		return false
@@ -148,8 +184,69 @@ func (p *ConditionNodeProcessor) compareValues(a, b interface{}) int {
 func (p *ConditionNodeProcessor) contains(haystack, needle interface{}) bool {
 	haystackStr := fmt.Sprintf("%v", haystack)
 	needleStr := fmt.Sprintf("%v", needle)
-	return len(haystackStr) > 0 && len(needleStr) > 0 && 
-		   (haystackStr == needleStr || len(haystackStr) > len(needleStr))
+	return len(haystackStr) > 0 && len(needleStr) > 0 &&
+		(haystackStr == needleStr || len(haystackStr) > len(needleStr))
 }
 
+// lengthEquals verifica si la longitud del texto es igual al valor esperado
+func (p *ConditionNodeProcessor) lengthEquals(actual interface{}, expected interface{}) bool {
+	actualStr := fmt.Sprintf("%v", actual)
 
+	// Convertir expected a int
+	var expectedLen int
+	switch v := expected.(type) {
+	case int:
+		expectedLen = v
+	case int32:
+		expectedLen = int(v)
+	case int64:
+		expectedLen = int(v)
+	case float64:
+		expectedLen = int(v)
+	case string:
+		fmt.Sscanf(v, "%d", &expectedLen)
+	default:
+		p.logger.Warn(fmt.Sprintf("Cannot convert expected value to int: %v (%T)", expected, expected))
+		return false
+	}
+
+	actualLen := len(actualStr)
+	p.logger.Info(fmt.Sprintf("📏 Length check: '%s' has %d chars, expected %d", actualStr, actualLen, expectedLen))
+
+	return actualLen == expectedLen
+}
+
+// hasDigits verifica si el texto tiene exactamente N dígitos numéricos (0-9)
+func (p *ConditionNodeProcessor) hasDigits(actual interface{}, expected interface{}) bool {
+	actualStr := fmt.Sprintf("%v", actual)
+
+	// Convertir expected a int
+	var expectedDigits int
+	switch v := expected.(type) {
+	case int:
+		expectedDigits = v
+	case int32:
+		expectedDigits = int(v)
+	case int64:
+		expectedDigits = int(v)
+	case float64:
+		expectedDigits = int(v)
+	case string:
+		fmt.Sscanf(v, "%d", &expectedDigits)
+	default:
+		p.logger.Warn(fmt.Sprintf("Cannot convert expected value to int: %v (%T)", expected, expected))
+		return false
+	}
+
+	// Contar solo dígitos
+	digitCount := 0
+	for _, char := range actualStr {
+		if char >= '0' && char <= '9' {
+			digitCount++
+		}
+	}
+
+	p.logger.Info(fmt.Sprintf("🔢 Digit check: '%s' has %d digits, expected %d", actualStr, digitCount, expectedDigits))
+
+	return digitCount == expectedDigits
+}

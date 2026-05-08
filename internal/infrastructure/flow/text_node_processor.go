@@ -85,5 +85,3 @@ func (p *TextNodeProcessor) Process(ctx context.Context, session *entities.FlowS
 
 	return result, nil
 }
-
-

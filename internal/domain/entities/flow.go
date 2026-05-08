@@ -1,6 +1,9 @@
 package entities
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // FlowData representa la estructura anidada de datos del flow
 type FlowData struct {
@@ -21,6 +24,7 @@ type Flow struct {
 	Status      string    `bson:"_status" json:"status"`
 	TenantID    string    `bson:"tenant_id,omitempty" json:"tenantId,omitempty"`
 	InstanceID  string    `bson:"instance_id,omitempty" json:"instanceId,omitempty"`
+	ContextID   string    `bson:"idcontext,omitempty" json:"contextId,omitempty"` // ID del contexto asociado al flow
 	CreatedAt   time.Time `bson:"_createdAt" json:"createdAt"`
 	UpdatedAt   time.Time `bson:"_updatedAt" json:"updatedAt"`
 }
@@ -49,13 +53,41 @@ type FlowNode struct {
 
 // FlowEdge representa una conexión entre nodos
 type FlowEdge struct {
-	ID           string `bson:"id" json:"id"`
-	From         string `bson:"from" json:"from"`
-	To           string `bson:"to" json:"to"`
-	SourceHandle string `bson:"source_handle" json:"source_handle"`
-	TargetHandle string `bson:"target_handle" json:"target_handle"`
-	Condition    string `bson:"condition,omitempty" json:"condition,omitempty"` // "yes", "no", "si", "default"
-	DelayMs      int    `bson:"delay_ms" json:"delay_ms"`
+	ID           string      `bson:"id" json:"id"`
+	From         string      `bson:"from" json:"from"`
+	To           string      `bson:"to" json:"to"`
+	SourceHandle string      `bson:"sourceHandle" json:"sourceHandle"`               // camelCase para coincidir con MongoDB
+	TargetHandle string      `bson:"targetHandle" json:"targetHandle"`               // camelCase para coincidir con MongoDB
+	Condition    interface{} `bson:"condition,omitempty" json:"condition,omitempty"` // "yes", "no", "si", "default" - puede ser string o documento
+	DelayMs      int         `bson:"delayMs" json:"delayMs"`                         // camelCase para coincidir con MongoDB
+}
+
+// GetCondition retorna el condition como string, manejando tanto strings como documentos embebidos
+func (e *FlowEdge) GetCondition() string {
+	if e.Condition == nil {
+		return ""
+	}
+	
+	// Si ya es string, retornarlo
+	if str, ok := e.Condition.(string); ok {
+		return str
+	}
+	
+	// Si es un documento embebido, intentar extraer un campo común o convertir a string
+	if m, ok := e.Condition.(map[string]interface{}); ok {
+		// Intentar extraer campos comunes
+		if val, ok := m["value"].(string); ok {
+			return val
+		}
+		if val, ok := m["condition"].(string); ok {
+			return val
+		}
+		// Si no hay campo específico, retornar string vacío
+		return ""
+	}
+	
+	// Para cualquier otro tipo, convertir a string
+	return fmt.Sprintf("%v", e.Condition)
 }
 
 // GetNodeByID busca un nodo por ID
@@ -85,11 +117,9 @@ func (f *Flow) GetOutgoingEdges(nodeID string) []FlowEdge {
 func (f *Flow) GetEdgeByCondition(nodeID string, condition string) *FlowEdge {
 	allEdges := f.GetEdges()
 	for i := range allEdges {
-		if allEdges[i].From == nodeID && allEdges[i].Condition == condition {
+		if allEdges[i].From == nodeID && allEdges[i].GetCondition() == condition {
 			return &allEdges[i]
 		}
 	}
 	return nil
 }
-
-

@@ -215,6 +215,39 @@ func NewIncomingMessage(instanceID, wamid, from, to, body string) *Message {
 	}
 }
 
+// NewIncomingMediaMessage crea un mensaje entrante con media (audio, image, video, etc.)
+func NewIncomingMediaMessage(instanceID, wamid, from, to, msgType string, media *MediaContent, interactive map[string]interface{}) *Message {
+	now := time.Now()
+	conversationID := from + "@" + instanceID
+
+	return &Message{
+		ID:             wamid,
+		InstanceID:     instanceID,
+		Channel:        "whatsapp",
+		Provider:       "meta",
+		Direction:      "in",
+		ConversationID: conversationID,
+		From:           from,
+		To:             to,
+		MessageData: MessageData{
+			ID:          wamid,
+			Type:        msgType,
+			Media:       media,
+			Interactive: interactive,
+		},
+		Status:   "received",
+		DedupKey: instanceID + "|" + wamid,
+		StatusHistory: []StatusHistory{
+			{Status: "received", Timestamp: now},
+		},
+		Timestamps: MessageTimestamps{
+			CreatedAt:  now,
+			ReceivedAt: &now,
+			UpdatedAt:  now,
+		},
+	}
+}
+
 // NewOutgoingMessage crea un nuevo mensaje saliente
 func NewOutgoingMessage(instanceID, to, body string) *Message {
 	now := time.Now()

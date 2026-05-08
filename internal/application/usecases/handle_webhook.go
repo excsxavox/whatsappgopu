@@ -3,7 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
-	
+
 	"whatsapp-api-go/internal/domain/ports"
 )
 
@@ -55,4 +55,3 @@ func (uc *HandleWebhookUseCaseImpl) Execute(ctx context.Context, payload map[str
 	uc.logger.Info("Webhook procesado exitosamente")
 	return nil
 }
-

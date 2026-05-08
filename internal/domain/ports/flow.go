@@ -58,5 +58,3 @@ type FlowEngine interface {
 	// MoveToNextNode avanza al siguiente nodo según los edges
 	MoveToNextNode(ctx context.Context, session *entities.FlowSession, condition string) error
 }
-
-

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"whatsapp-api-go/internal/domain/entities"
 	"whatsapp-api-go/internal/domain/ports"
 )
@@ -34,7 +35,10 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 
 	// Extraer configuración
 	config := node.Config
-	
+
+	// DEBUG: Ver estructura completa del config
+	p.logger.Info(fmt.Sprintf("🔍 CONFIG COMPLETO: %+v", config))
+
 	// La configuración puede venir en diferentes formatos
 	var header, body, footer string
 	var buttonsConfig []interface{}
@@ -42,19 +46,41 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 
 	// Formato 1: action.header, action.body, action.buttons
 	if actionConfig, ok := config["action"].(map[string]interface{}); ok {
+		p.logger.Info(fmt.Sprintf("✅ Encontrado action config: %+v", actionConfig))
 		header, _ = actionConfig["header"].(string)
 		body, _ = actionConfig["body"].(string)
 		footer, _ = actionConfig["footer"].(string)
-		buttonsConfig, _ = actionConfig["buttons"].([]interface{})
+
+		// Extraer buttons - puede ser primitive.A (MongoDB) o []interface{}
+		if buttonsRaw, exists := actionConfig["buttons"]; exists {
+			p.logger.Info(fmt.Sprintf("🔍 Tipo de buttons: %T", buttonsRaw))
+
+			// Caso 1: primitive.A (MongoDB driver)
+			if primitiveArray, ok := buttonsRaw.(primitive.A); ok {
+				p.logger.Info(fmt.Sprintf("✅ Es primitive.A con %d elementos", len(primitiveArray)))
+				for _, item := range primitiveArray {
+					buttonsConfig = append(buttonsConfig, item)
+				}
+			} else if interfaceArray, ok := buttonsRaw.([]interface{}); ok {
+				// Caso 2: []interface{} estándar
+				p.logger.Info(fmt.Sprintf("✅ Es []interface{} con %d elementos", len(interfaceArray)))
+				buttonsConfig = interfaceArray
+			} else {
+				p.logger.Warn(fmt.Sprintf("⚠️ Tipo no reconocido: %T", buttonsRaw))
+			}
+		}
+		p.logger.Info(fmt.Sprintf("📋 Buttons extraídos de action: %d botones", len(buttonsConfig)))
 	} else {
+		p.logger.Warn("⚠️ No se encontró 'action', buscando formato alternativo")
 		// Formato 2: content/bodyText y buttons directamente
 		body, _ = config["content"].(string)
 		if body == "" {
 			body, _ = config["bodyText"].(string)
 		}
 		buttonsConfig, _ = config["buttons"].([]interface{})
+		p.logger.Info(fmt.Sprintf("📋 Buttons extraídos directo: %d botones", len(buttonsConfig)))
 	}
-	
+
 	responseVariableName, _ = config["responseVariableName"].(string)
 
 	// Reemplazar variables en el contenido
@@ -66,7 +92,7 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 	// Solo necesitamos copiarlos y reemplazar variables en los títulos
 	buttons := []map[string]interface{}{}
 	p.logger.Info(fmt.Sprintf("📋 Procesando %d botones config", len(buttonsConfig)))
-	
+
 	for i, btnConfig := range buttonsConfig {
 		btnMap, ok := btnConfig.(map[string]interface{})
 		if !ok {
@@ -79,16 +105,16 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 		// Los botones vienen con esta estructura:
 		// { "type": "reply", "reply": { "id": "...", "title": "..." } }
 		// Solo necesitamos copiarlos y reemplazar variables en el título
-		
+
 		if replyData, ok := btnMap["reply"].(map[string]interface{}); ok {
 			title, _ := replyData["title"].(string)
 			id, _ := replyData["id"].(string)
-			
+
 			p.logger.Info(fmt.Sprintf("✅ Botón %d - id: %s, title: %s", i, id, title))
-			
+
 			// Reemplazar variables en el título
 			title = p.variableReplacer.ReplaceInString(title, session.Variables)
-			
+
 			// Crear copia del botón con el título procesado
 			buttons = append(buttons, map[string]interface{}{
 				"type": btnMap["type"],
@@ -102,7 +128,7 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 			p.logger.Warn(fmt.Sprintf("⚠️ Botón %d no tiene estructura 'reply', se omite", i))
 		}
 	}
-	
+
 	p.logger.Info(fmt.Sprintf("📊 Total botones construidos: %d", len(buttons)))
 
 	// Validar que haya botones
@@ -130,7 +156,7 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 			"buttons": buttons,
 		},
 	}
-	
+
 	// Agregar header si existe
 	if header != "" {
 		interactive["header"] = map[string]interface{}{
@@ -138,7 +164,7 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 			"text": header,
 		}
 	}
-	
+
 	// Agregar footer si existe
 	if footer != "" {
 		interactive["footer"] = map[string]interface{}{
@@ -183,5 +209,3 @@ func (p *ButtonsNodeProcessor) Process(ctx context.Context, session *entities.Fl
 
 	return result, nil
 }
-
-

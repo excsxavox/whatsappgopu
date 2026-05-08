@@ -4,20 +4,20 @@ import "time"
 
 // FlowSession representa el estado actual de una conversación dentro de un flujo
 type FlowSession struct {
-	ID                  string                 `bson:"_id" json:"id"`
-	ConversationID      string                 `bson:"conversation_id" json:"conversation_id"`
-	FlowID              string                 `bson:"flow_id" json:"flow_id"`
-	CurrentNodeID       string                 `bson:"current_node_id" json:"current_node_id"`
-	Variables           map[string]interface{} `bson:"variables" json:"variables"`
-	WaitingForResponse  bool                   `bson:"waiting_for_response" json:"waiting_for_response"`
-	WaitingForVariable  string                 `bson:"waiting_for_variable" json:"waiting_for_variable"`
-	ExecutedNodes       []string               `bson:"executed_nodes" json:"executed_nodes"`
-	Status              string                 `bson:"status" json:"status"` // active, completed, abandoned, error
-	CreatedAt           time.Time              `bson:"created_at" json:"created_at"`
-	UpdatedAt           time.Time              `bson:"updated_at" json:"updated_at"`
-	LastActivityAt      time.Time              `bson:"last_activity_at" json:"last_activity_at"`
-	TenantID            string                 `bson:"tenant_id" json:"tenant_id"`
-	InstanceID          string                 `bson:"instance_id" json:"instance_id"`
+	ID                 string                 `bson:"_id" json:"id"`
+	ConversationID     string                 `bson:"conversation_id" json:"conversation_id"`
+	FlowID             string                 `bson:"flow_id" json:"flow_id"`
+	CurrentNodeID      string                 `bson:"current_node_id" json:"current_node_id"`
+	Variables          map[string]interface{} `bson:"variables" json:"variables"`
+	WaitingForResponse bool                   `bson:"waiting_for_response" json:"waiting_for_response"`
+	WaitingForVariable string                 `bson:"waiting_for_variable" json:"waiting_for_variable"`
+	ExecutedNodes      []string               `bson:"executed_nodes" json:"executed_nodes"`
+	Status             string                 `bson:"status" json:"status"` // active, completed, abandoned, error
+	CreatedAt          time.Time              `bson:"created_at" json:"created_at"`
+	UpdatedAt          time.Time              `bson:"updated_at" json:"updated_at"`
+	LastActivityAt     time.Time              `bson:"last_activity_at" json:"last_activity_at"`
+	TenantID           string                 `bson:"tenant_id" json:"tenant_id"`
+	InstanceID         string                 `bson:"instance_id" json:"instance_id"`
 }
 
 // NewFlowSession crea una nueva sesión de flujo
@@ -97,5 +97,3 @@ func (fs *FlowSession) UpdateActivity() {
 	fs.LastActivityAt = time.Now()
 	fs.UpdatedAt = time.Now()
 }
-
-

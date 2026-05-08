@@ -2,7 +2,7 @@ package usecases
 
 import (
 	"context"
-	
+
 	"whatsapp-api-go/internal/domain/ports"
 )
 
@@ -45,4 +45,3 @@ func (uc *DisconnectUseCaseImpl) Execute(ctx context.Context) error {
 	uc.logger.Info("Desconectado exitosamente")
 	return nil
 }
-

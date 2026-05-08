@@ -25,6 +25,9 @@ type MessagingService interface {
 
 	// IsConnected verifica si hay conexión activa
 	IsConnected(ctx context.Context) bool
+
+	// DownloadMedia descarga un archivo de media desde WhatsApp
+	DownloadMedia(mediaID string) ([]byte, string, error)
 }
 
 // MessageRepository define el puerto para persistencia de mensajes

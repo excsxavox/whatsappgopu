@@ -16,6 +16,7 @@ import (
 	"whatsapp-api-go/internal/infrastructure/adapters/whatsapp"
 	"whatsapp-api-go/internal/infrastructure/config"
 	"whatsapp-api-go/internal/infrastructure/flow"
+	"whatsapp-api-go/internal/infrastructure/services"
 
 	// Utilities
 	"whatsapp-api-go/pkg/logger"
@@ -79,6 +80,7 @@ func main() {
 	companyRepo := storage.NewMongoCompanyRepository(mongoClient.GetDatabase())
 	flowRepo := storage.NewMongoFlowRepository(mongoClient)
 	flowSessionRepo := storage.NewMongoFlowSessionRepository(mongoClient)
+	contextoRepo := storage.NewMongoContextoRepository(mongoClient.GetDatabase())
 
 	log.Info("✅ Adaptadores inicializados")
 	fmt.Println()
@@ -117,14 +119,100 @@ func main() {
 	log.Info("✅ Casos de uso configurados")
 	fmt.Println()
 
-	// 5.1 Inicializar Motor de Flujos
+	// 5.1 Inicializar Servicio de Transcripción
+	log.Info("🎤 Configurando servicio de transcripción...")
+	openAIKey := os.Getenv("OPENAI_API_KEY")
+	if openAIKey == "" {
+		log.Warn("⚠️ OPENAI_API_KEY no configurada, transcripción de audio deshabilitada")
+	}
+	transcriptionService := services.NewTranscriptionService(openAIKey, log)
+
+	// 5.1.1 Inicializar Servicio de Validación con IA
+	log.Info("🤖 Configurando servicio de validación con IA...")
+	aiValidationService := services.NewAIValidationService(openAIKey, log)
+
+	// 5.1.1.1 Inicializar Servicio de IA con Contexto
+	log.Info("🧠 Configurando servicio de IA con contexto...")
+	aiContextService := services.NewAIContextService(openAIKey, log)
+
+	// 5.1.2 Inicializar Servicio de Texto a Voz (TTS)
+	log.Info("🔊 Configurando servicio de texto a voz (TTS)...")
+	// Prioridad: Azure > Google > OpenAI
+	// Azure Speech Service (máxima prioridad)
+	azureSpeechKey := os.Getenv("AZURE_SPEECH_KEY")       // Clave de suscripción de Azure Speech Service
+	azureSpeechRegion := os.Getenv("AZURE_SPEECH_REGION")  // Región de Azure (ej: "eastus", "westus")
+	azureTTSVoice := os.Getenv("AZURE_TTS_VOICE")         // Opcional: ej. "es-ES-ElviraNeural" (default: "es-ES-ElviraNeural")
+	azureTTSLanguage := os.Getenv("AZURE_TTS_LANGUAGE")    // Opcional: "es-ES" o "es-MX" (default: "es-ES")
+
+	// Google TTS (segunda prioridad)
+	googleTTSKey := os.Getenv("GOOGLE_TTS_API_KEY")               // Clave de API (para modelo standard)
+	googleTTSJSON := os.Getenv("GOOGLE_TTS_SERVICE_ACCOUNT_JSON") // JSON de cuenta de servicio (para Gemini Pro TTS)
+	googleTTSVoice := os.Getenv("GOOGLE_TTS_VOICE")               // Opcional: ej. "es-ES-Neural2-A" para modelo standard
+	googleTTSModel := os.Getenv("GOOGLE_TTS_MODEL")               // Opcional: "gemini" o "standard" (default: "standard")
+	googleTTSLanguage := os.Getenv("GOOGLE_TTS_LANGUAGE")         // Opcional: "es-ES" o "es-MX" (default: "es-ES")
+	googleTTSPrompt := os.Getenv("GOOGLE_TTS_PROMPT")             // Opcional: prompt para controlar el tono (solo para Gemini)
+
+	// Determinar qué autenticación usar según el modelo de Google
+	// Si el modelo es "standard", usar API key (más simple, no requiere Vertex AI)
+	// Si el modelo es "gemini", usar JSON de cuenta de servicio (requiere Vertex AI)
+	var googleTTSAuth string
+	if googleTTSModel == "" || googleTTSModel == "standard" {
+		// Modelo standard: priorizar API key
+		googleTTSAuth = googleTTSKey
+		if googleTTSAuth == "" {
+			googleTTSAuth = googleTTSJSON // Fallback a JSON si no hay API key
+		}
+	} else {
+		// Modelo gemini: requiere JSON de cuenta de servicio
+		googleTTSAuth = googleTTSJSON
+		if googleTTSAuth == "" {
+			googleTTSAuth = googleTTSKey // Fallback a API key si no hay JSON
+		}
+	}
+
+	// Determinar voz e idioma a usar (priorizar Azure, luego Google, luego defaults)
+	voiceName := azureTTSVoice
+	if voiceName == "" {
+		voiceName = googleTTSVoice
+	}
+	language := azureTTSLanguage
+	if language == "" {
+		language = googleTTSLanguage
+	}
+	if language == "" {
+		language = "es-ES" // Default: español de España
+	}
+
+	// Log de configuración para debugging
+	if azureSpeechKey != "" && azureSpeechRegion != "" {
+		log.Info(fmt.Sprintf("✅ AZURE_SPEECH_KEY encontrada (longitud: %d)", len(azureSpeechKey)))
+		log.Info(fmt.Sprintf("✅ AZURE_SPEECH_REGION: %s", azureSpeechRegion))
+		log.Info(fmt.Sprintf("   Voz: %s, Idioma: %s", voiceName, language))
+	} else if googleTTSAuth != "" {
+		if googleTTSJSON != "" {
+			log.Info("✅ GOOGLE_TTS_SERVICE_ACCOUNT_JSON encontrada (autenticación con cuenta de servicio)")
+		} else if googleTTSKey != "" {
+			log.Info(fmt.Sprintf("✅ GOOGLE_TTS_API_KEY encontrada (longitud: %d)", len(googleTTSKey)))
+		}
+		log.Info(fmt.Sprintf("   Voz: %s, Modelo: %s, Idioma: %s", googleTTSVoice, googleTTSModel, googleTTSLanguage))
+	} else {
+		log.Info("ℹ️ AZURE_SPEECH_KEY o GOOGLE_TTS_API_KEY no configurada, usando OpenAI TTS")
+	}
+	ttsService := services.NewUnifiedTTSService(azureSpeechKey, azureSpeechRegion, googleTTSAuth, openAIKey, log, voiceName, googleTTSModel, language, googleTTSPrompt)
+
+	// 5.2 Inicializar Motor de Flujos
 	log.Info("🔄 Configurando motor de flujos...")
-	
+
 	flowEngine := flow.NewFlowEngine(
 		flowRepo,
 		flowSessionRepo,
 		whatsappAdapter,
 		log,
+		transcriptionService,
+		aiValidationService,
+		aiContextService,
+		contextoRepo,
+		ttsService,
 	)
 
 	startFlowUseCase := usecases.NewStartFlowUseCase(

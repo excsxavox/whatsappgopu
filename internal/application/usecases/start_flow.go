@@ -62,5 +62,3 @@ func (uc *StartFlowUseCase) Execute(ctx context.Context, req StartFlowRequest) (
 
 	return session, nil
 }
-
-

@@ -9,6 +9,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -201,9 +204,105 @@ func (a *CloudAPIAdapter) buildPayload(message *entities.Message) (map[string]in
 	return payload, nil
 }
 
+// convertWebMToOGG convierte audio WEBM a OGG usando ffmpeg
+func (a *CloudAPIAdapter) convertWebMToOGG(webmData []byte) ([]byte, error) {
+	// Crear archivo temporal para WEBM
+	tmpDir := os.TempDir()
+	webmFile := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.webm", time.Now().UnixNano()))
+	oggFile := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.ogg", time.Now().UnixNano()))
+
+	// Limpiar archivos temporales al final
+	defer os.Remove(webmFile)
+	defer os.Remove(oggFile)
+
+	// Escribir datos WEBM a archivo temporal
+	if err := os.WriteFile(webmFile, webmData, 0644); err != nil {
+		return nil, fmt.Errorf("error writing webm file: %w", err)
+	}
+
+	// Ejecutar ffmpeg para convertir WEBM a OGG
+	cmd := exec.Command("ffmpeg", "-i", webmFile, "-c:a", "libopus", "-b:a", "128k", oggFile)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg conversion failed: %w, stderr: %s", err, stderr.String())
+	}
+
+	// Leer archivo OGG convertido
+	oggData, err := os.ReadFile(oggFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading converted ogg file: %w", err)
+	}
+
+	a.logger.Info(fmt.Sprintf("✅ Converted WEBM to OGG: %d bytes -> %d bytes", len(webmData), len(oggData)))
+	return oggData, nil
+}
+
+// convertMP3ToOGG convierte audio MP3 a OGG Opus usando ffmpeg (formato recomendado por WhatsApp)
+func (a *CloudAPIAdapter) convertMP3ToOGG(mp3Data []byte) ([]byte, error) {
+	// Crear archivo temporal para MP3
+	tmpDir := os.TempDir()
+	mp3File := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.mp3", time.Now().UnixNano()))
+	oggFile := filepath.Join(tmpDir, fmt.Sprintf("audio_%d.ogg", time.Now().UnixNano()))
+
+	// Limpiar archivos temporales al final
+	defer os.Remove(mp3File)
+	defer os.Remove(oggFile)
+
+	// Escribir datos MP3 a archivo temporal
+	if err := os.WriteFile(mp3File, mp3Data, 0644); err != nil {
+		return nil, fmt.Errorf("error writing mp3 file: %w", err)
+	}
+
+	// Ejecutar ffmpeg para convertir MP3 a OGG Opus
+	// -y: sobrescribir archivo de salida sin preguntar
+	// -i: archivo de entrada
+	// -c:a libopus: codec de audio Opus
+	// -b:a 128k: bitrate de audio
+	cmd := exec.Command("ffmpeg", "-y", "-i", mp3File, "-c:a", "libopus", "-b:a", "128k", oggFile)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg conversion failed: %w, stderr: %s", err, stderr.String())
+	}
+
+	// Leer archivo OGG convertido
+	oggData, err := os.ReadFile(oggFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading converted ogg file: %w", err)
+	}
+
+	a.logger.Info(fmt.Sprintf("✅ Converted MP3 to OGG: %d bytes -> %d bytes", len(mp3Data), len(oggData)))
+	return oggData, nil
+}
+
 // uploadMedia sube un archivo de medios a WhatsApp Cloud API usando multipart/form-data
 func (a *CloudAPIAdapter) uploadMedia(data []byte, mimeType string) (string, error) {
 	url := fmt.Sprintf("%s/%s/media", a.baseURL, a.phoneNumberID)
+
+	// Convertir WEBM a OGG si es necesario
+	if strings.Contains(mimeType, "audio/webm") {
+		a.logger.Info("🔄 Converting WEBM to OGG...")
+		convertedData, err := a.convertWebMToOGG(data)
+		if err != nil {
+			return "", fmt.Errorf("error converting webm to ogg: %w", err)
+		}
+		data = convertedData
+		mimeType = "audio/ogg" // Actualizar mime type
+	}
+
+	// Convertir MP3 a OGG Opus (formato recomendado por WhatsApp)
+	if strings.Contains(mimeType, "audio/mpeg") || strings.Contains(mimeType, "audio/mp3") {
+		a.logger.Info("🔄 Converting MP3 to OGG Opus (WhatsApp recommended format)...")
+		convertedData, err := a.convertMP3ToOGG(data)
+		if err != nil {
+			return "", fmt.Errorf("error converting mp3 to ogg: %w", err)
+		}
+		data = convertedData
+		mimeType = "audio/ogg" // Actualizar mime type
+	}
 
 	// Crear buffer para multipart
 	var requestBody bytes.Buffer
@@ -215,16 +314,20 @@ func (a *CloudAPIAdapter) uploadMedia(data []byte, mimeType string) (string, err
 	// Determinar extensión y mime type correcto
 	extension := ".ogg"
 	fileMimeType := "audio/ogg; codecs=opus"
+	typeField := "audio/ogg" // Tipo simplificado para el campo "type" de WhatsApp
 
-	if strings.Contains(mimeType, "audio/webm") {
-		extension = ".ogg"
-		fileMimeType = "audio/ogg; codecs=opus" // WhatsApp prefiere OGG Opus
-	} else if strings.Contains(mimeType, "audio/ogg") || strings.Contains(mimeType, "audio/opus") {
+	if strings.Contains(mimeType, "audio/ogg") || strings.Contains(mimeType, "audio/opus") {
 		extension = ".ogg"
 		fileMimeType = "audio/ogg; codecs=opus"
+		typeField = "audio/ogg"
 	} else if strings.Contains(mimeType, "audio/mpeg") || strings.Contains(mimeType, "audio/mp3") {
 		extension = ".mp3"
 		fileMimeType = "audio/mpeg"
+		typeField = "audio/mpeg"
+	} else if strings.Contains(mimeType, "audio/aac") {
+		extension = ".aac"
+		fileMimeType = "audio/aac"
+		typeField = "audio/aac"
 	}
 
 	// Crear parte del archivo con Content-Type específico
@@ -241,8 +344,8 @@ func (a *CloudAPIAdapter) uploadMedia(data []byte, mimeType string) (string, err
 		return "", fmt.Errorf("error writing file data: %w", err)
 	}
 
-	// Agregar type
-	writer.WriteField("type", mimeType)
+	// Agregar type - usar el typeField simplificado para WhatsApp
+	writer.WriteField("type", typeField)
 
 	// Cerrar writer
 	if err := writer.Close(); err != nil {
@@ -351,4 +454,72 @@ func (a *CloudAPIAdapter) GetConnection(ctx context.Context) (*entities.Connecti
 // IsConnected siempre retorna true en Cloud API (sin sesión local)
 func (a *CloudAPIAdapter) IsConnected(ctx context.Context) bool {
 	return true
+}
+
+// DownloadMedia descarga un archivo de media desde WhatsApp usando su media_id
+func (a *CloudAPIAdapter) DownloadMedia(mediaID string) ([]byte, string, error) {
+	// Paso 1: Obtener la URL del media
+	urlEndpoint := fmt.Sprintf("%s/%s", a.baseURL, mediaID)
+
+	req, err := http.NewRequest("GET", urlEndpoint, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("error creating media URL request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.accessToken))
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("error getting media URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("error getting media URL, status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parsear respuesta para obtener la URL
+	var mediaInfo struct {
+		URL      string `json:"url"`
+		MimeType string `json:"mime_type"`
+		SHA256   string `json:"sha256"`
+		FileSize int64  `json:"file_size"`
+		ID       string `json:"id"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&mediaInfo); err != nil {
+		return nil, "", fmt.Errorf("error parsing media info: %w", err)
+	}
+
+	a.logger.Info(fmt.Sprintf("📥 Media URL obtenida: %s (mime: %s, size: %d)", mediaInfo.URL, mediaInfo.MimeType, mediaInfo.FileSize))
+
+	// Paso 2: Descargar el archivo desde la URL
+	downloadReq, err := http.NewRequest("GET", mediaInfo.URL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("error creating download request: %w", err)
+	}
+
+	downloadReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.accessToken))
+
+	downloadResp, err := a.httpClient.Do(downloadReq)
+	if err != nil {
+		return nil, "", fmt.Errorf("error downloading media: %w", err)
+	}
+	defer downloadResp.Body.Close()
+
+	if downloadResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(downloadResp.Body)
+		return nil, "", fmt.Errorf("error downloading media, status %d: %s", downloadResp.StatusCode, string(body))
+	}
+
+	// Leer el contenido del archivo
+	data, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("error reading media data: %w", err)
+	}
+
+	a.logger.Info(fmt.Sprintf("✅ Media descargado: %d bytes", len(data)))
+
+	return data, mediaInfo.MimeType, nil
 }

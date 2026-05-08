@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"log"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -30,8 +32,23 @@ func (r *MongoMessageRepository) Save(ctx context.Context, message *entities.Mes
 	filter := bson.M{"_id": message.ID}
 	update := bson.M{"$set": message}
 
-	_, err := r.collection.UpdateOne(ctx, filter, update, opts)
-	return err
+	log.Printf("📦 [MongoDB] Guardando mensaje: _id=%s, type=%s, has_media=%v", message.ID, message.MessageData.Type, message.MessageData.Media != nil)
+
+	result, err := r.collection.UpdateOne(ctx, filter, update, opts)
+	if err != nil {
+		log.Printf("❌ [MongoDB] Error en UpdateOne: %v", err)
+		return err
+	}
+
+	log.Printf("✅ [MongoDB] UpdateOne result: matched=%d, modified=%d, upserted=%v",
+		result.MatchedCount, result.ModifiedCount, result.UpsertedID)
+
+	// Verificar que realmente se guardó
+	if result.UpsertedCount == 0 && result.ModifiedCount == 0 && result.MatchedCount == 0 {
+		return fmt.Errorf("no se pudo guardar el mensaje en MongoDB (sin matches, sin upserts)")
+	}
+
+	return nil
 }
 
 // FindByID busca un mensaje por ID (wamid)

@@ -8,4 +8,3 @@ type Logger interface {
 	Debug(msg string, args ...interface{})
 	Warn(msg string, args ...interface{})
 }
-

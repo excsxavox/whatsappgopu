@@ -30,4 +30,3 @@ type EstablishConnectionUseCase interface {
 type DisconnectUseCase interface {
 	Execute(ctx context.Context) error
 }
-

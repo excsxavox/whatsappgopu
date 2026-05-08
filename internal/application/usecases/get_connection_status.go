@@ -2,7 +2,7 @@ package usecases
 
 import (
 	"context"
-	
+
 	"whatsapp-api-go/internal/domain/entities"
 	"whatsapp-api-go/internal/domain/ports"
 )
@@ -32,10 +32,9 @@ func (uc *GetConnectionStatusUseCaseImpl) Execute(ctx context.Context) (*entitie
 		return nil, err
 	}
 
-	uc.logger.Debug("Estado de conexión obtenido", 
-		"isConnected", connection.IsConnected, 
+	uc.logger.Debug("Estado de conexión obtenido",
+		"isConnected", connection.IsConnected,
 		"isLoggedIn", connection.IsLoggedIn)
 
 	return connection, nil
 }
-

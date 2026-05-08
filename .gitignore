@@ -57,3 +57,24 @@ OBTENER_URL_NGROK.ps1
 
 # Documentación de setup local
 CONFIGURAR_NGROK.md
+
+# Node.js (no forma parte del build Go; evitar npm install accidental en la raíz)
+node_modules/
+package.json
+package-lock.json
+
+# Volcados de logs Azure/Kudu y zips de diagnóstico (no subir al repo)
+app-logs*.zip
+logs_check.zip
+app-logs-extracted/
+app-logs-audio-extracted/
+app-logs-latest-extracted/
+latest-logs/
+logs-audio-test/
+
+# Credenciales / ajustes con datos sensibles (usar .env y plantillas sin secretos)
+google_service_account_temp.txt
+voce-*.json
+azure_settings.json
+azure_settings_correct.json
+azure_settings_final.json

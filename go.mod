@@ -5,9 +5,11 @@ go 1.24.0
 require (
 	github.com/google/uuid v1.6.0
 	go.mongodb.org/mongo-driver v1.17.1
+	golang.org/x/oauth2 v0.33.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
